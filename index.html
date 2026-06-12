@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Перекрёстные суммы</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root{
+    --bg:var(--tg-theme-bg-color,#17212b);
+    --text:var(--tg-theme-text-color,#f5f5f5);
+    --hint:var(--tg-theme-hint-color,#7d8b99);
+    --btn:var(--tg-theme-button-color,#5288c1);
+    --btn-text:var(--tg-theme-button-text-color,#fff);
+    --secbg:var(--tg-theme-secondary-bg-color,#232e3c);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;overscroll-behavior:none;
+    height:100%;width:100%;overflow:hidden;position:fixed;top:0;left:0;right:0;bottom:0;}
+  body{display:flex;align-items:center;justify-content:center;min-height:100vh;min-height:100dvh;}
+  #app{width:100%;max-width:560px;margin:0 auto;padding:10px 12px;max-height:100dvh;
+    display:flex;flex-direction:column;justify-content:center;}
+  .topbar{display:flex;align-items:center;justify-content:center;margin-bottom:10px;}
+  h1{font-size:18px;margin:0;font-weight:700;letter-spacing:.2px;}
+  .diffrow{display:flex;gap:6px;margin-bottom:12px;}
+  .diffrow button{flex:1;padding:9px 4px;border:none;border-radius:9px;background:var(--secbg);
+    color:var(--text);font-size:13px;font-weight:600;cursor:pointer;transition:transform .12s,background .15s;}
+  .diffrow button:active{transform:scale(.95);}
+  .diffrow button.active{background:var(--btn);color:var(--btn-text);}
+  .board-wrap{width:100%;display:flex;justify-content:center;}
+  #board{display:grid;gap:3px;}
+  .cell{position:relative;aspect-ratio:1/1;border-radius:8px;display:flex;align-items:center;justify-content:center;
+    font-size:5.6vw;font-weight:600;user-select:none;background:#eef1f4;color:#1b1b1b;cursor:pointer;overflow:hidden;
+    transition:background .25s ease,color .25s ease,transform .12s ease;}
+  @media(min-width:560px){.cell{font-size:30px;}}
+  .cell:active{transform:scale(.9);}
+  .cell .d{position:relative;z-index:2;transition:transform .18s ease,opacity .25s ease;}
+  .cell.crossed{background:#2b333d;color:#5b6672;}
+  .cell.crossed .d{opacity:.55;transform:scale(.84);}
+  /* animated strike-through that draws itself */
+  .cell::after{content:'';position:absolute;left:50%;top:50%;width:0;height:2.6px;background:#ef5350;border-radius:2px;
+    transform:translate(-50%,-50%) rotate(-16deg);z-index:3;transition:width .22s cubic-bezier(.5,1.6,.4,1);}
+  .cell.crossed::after{width:68%;}
+  /* tap ripple */
+  .ripple{position:absolute;border-radius:50%;background:rgba(82,136,193,.45);transform:scale(0);
+    animation:ripple .5s ease-out forwards;pointer-events:none;z-index:1;}
+  @keyframes ripple{to{transform:scale(2.4);opacity:0;}}
+  /* pop on tap */
+  .pop{animation:pop .26s ease;}
+  @keyframes pop{0%{transform:scale(1);}35%{transform:scale(.85);}70%{transform:scale(1.07);}100%{transform:scale(1);}}
+  /* entrance stagger */
+  .cell.in{animation:cellin .35s ease both;}
+  @keyframes cellin{0%{opacity:0;transform:scale(.6) translateY(6px);}100%{opacity:1;transform:scale(1) translateY(0);}}
+  /* target sums: BIG and BOLD; current sum: small and faint */
+  .target{display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:8px;
+    background:transparent;line-height:1;transition:transform .2s ease;}
+  .target .goal{font-size:6vw;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums;transition:color .2s ease;}
+  @media(min-width:560px){.target .goal{font-size:32px;}}
+  .target .cur{font-size:2.7vw;font-weight:400;color:var(--hint);opacity:.5;margin-top:3px;font-variant-numeric:tabular-nums;transition:opacity .2s;}
+  @media(min-width:560px){.target .cur{font-size:13px;}}
+  .target.ok .goal{color:#43a047;}
+  .target.over .goal{color:#ef5350;}
+  .target.justok{animation:okpulse .45s ease;}
+  @keyframes okpulse{0%{transform:scale(1);}45%{transform:scale(1.32);}100%{transform:scale(1);}}
+  .corner{background:transparent;}
+  #msg{text-align:center;min-height:24px;margin:14px 0 4px;font-size:17px;font-weight:700;transition:opacity .2s;}
+  #msg.win{color:#66bb6a;animation:winmsg .5s ease;}
+  @keyframes winmsg{0%{opacity:0;transform:translateY(8px) scale(.9);}100%{opacity:1;transform:none;}}
+  .actions{display:grid;grid-template-columns:repeat(2,1fr);gap:7px;margin-top:8px;}
+  .actions button{padding:12px 0;border:none;border-radius:10px;background:var(--secbg);color:var(--text);
+    font-size:14px;font-weight:600;cursor:pointer;transition:transform .12s ease,background .15s,opacity .15s;}
+  .actions button:active{transform:scale(.95);}
+  .actions button.primary{background:var(--btn);color:var(--btn-text);}
+  .actions button:disabled{opacity:.4;cursor:default;transform:none;}
+  .rules{margin-top:14px;font-size:12.5px;color:var(--hint);line-height:1.55;}
+  .rules summary{cursor:pointer;font-weight:600;color:var(--text);}
+  /* confetti */
+  .confetti{position:fixed;top:-12px;width:9px;height:14px;z-index:99;border-radius:2px;pointer-events:none;
+    animation:fall linear forwards;}
+  @keyframes fall{0%{transform:translateY(0) rotate(0);opacity:1;}100%{transform:translateY(105vh) rotate(720deg);opacity:.9;}}
+  .board-win{animation:boardwin .5s ease;}
+  @keyframes boardwin{0%,100%{transform:scale(1);}50%{transform:scale(1.025);}}
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="topbar"><h1>Перекрёстные суммы</h1></div>
+  <div class="diffrow">
+    <button data-diff="easy" class="active">Легко</button>
+    <button data-diff="medium">Средне</button>
+    <button data-diff="hard">Сложно</button>
+  </div>
+  <div class="board-wrap"><div id="board"></div></div>
+  <div id="msg"></div>
+  <div class="actions">
+    <button id="new" class="primary">Новая</button>
+    <button id="undo">← Вернуть ход</button>
+  </div>
+  <details class="rules">
+    <summary>Правила</summary>
+    <p>Все числа сначала участвуют в суммах. Ваша задача — вычеркнуть лишние числа так, чтобы оставшиеся в каждой строке и столбце давали указанную сумму (крупные цифры справа и снизу). Нажмите на число, чтобы вычеркнуть его, и ещё раз — чтобы вернуть. Проверка автоматическая. У каждой головоломки ровно одно решение.</p>
+  </details>
+</div>
+<script>
+/*
+ * Cross-Sums engine v3 with LOGIC-BASED difficulty.
+ * Grid NxN of digits 1-9. Each row/col has a target = sum of "kept" cells.
+ * Player crosses out the non-kept cells; remaining must match targets.
+ *
+ * Difficulty = number of "guesses" needed: cells that constraint-propagation
+ * alone cannot decide. easy=0 guesses, medium few, hard many.
+ */
+(function (global) {
+  'use strict';
+
+  function makeRng(seed) {
+    let a = seed >>> 0;
+    return function () {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  // ---- uniqueness counter (row-by-row, column pruning) ----
+  function countSolutions(grid, N, rowTargets, colTargets, cap) {
+    const rowMasks = [];
+    for (let r = 0; r < N; r++) {
+      const masks = [];
+      for (let m = 0; m < (1 << N); m++) {
+        let s = 0; for (let c = 0; c < N; c++) if (m & (1 << c)) s += grid[r][c];
+        if (s === rowTargets[r]) masks.push(m);
+      }
+      if (!masks.length) return 0;
+      rowMasks.push(masks);
+    }
+    const colSum = new Array(N).fill(0);
+    let count = 0;
+    (function rec(r) {
+      if (count >= cap) return;
+      if (r === N) { for (let c = 0; c < N; c++) if (colSum[c] !== colTargets[c]) return; count++; return; }
+      const masks = rowMasks[r];
+      for (let i = 0; i < masks.length; i++) {
+        const m = masks[i]; let ok = true;
+        for (let c = 0; c < N; c++) if (m & (1 << c)) { if (colSum[c] + grid[r][c] > colTargets[c]) { ok = false; break; } }
+        if (!ok) continue;
+        for (let c = 0; c < N; c++) if (m & (1 << c)) colSum[c] += grid[r][c];
+        rec(r + 1);
+        for (let c = 0; c < N; c++) if (m & (1 << c)) colSum[c] -= grid[r][c];
+        if (count >= cap) return;
+      }
+    })(0);
+    return count;
+  }
+
+  // ---- constraint propagation ----
+  // state: Int8Array N*N, 0 unknown, 1 kept, 2 crossed.
+  // Returns 'contradiction' | 'changed' | 'stable'
+  function propagateLine(grid, N, state, cells, target) {
+    // cells: array of [r,c]. Determine forced kept/crossed among unknowns.
+    let known = 0; const unknown = [];
+    for (const [r, c] of cells) {
+      const st = state[r * N + c];
+      if (st === 1) known += grid[r][c];
+      else if (st === 0) unknown.push([r, c]);
+    }
+    const need = target - known;
+    if (need < 0) return 'contradiction';
+    const U = unknown.length;
+    if (U === 0) return need === 0 ? 'stable' : 'contradiction';
+    // enumerate subsets of unknown summing to need
+    const inAll = new Array(U).fill(true);
+    const inNone = new Array(U).fill(true);
+    let validCount = 0;
+    for (let m = 0; m < (1 << U); m++) {
+      let s = 0; for (let i = 0; i < U; i++) if (m & (1 << i)) s += grid[unknown[i][0]][unknown[i][1]];
+      if (s !== need) continue;
+      validCount++;
+      for (let i = 0; i < U; i++) { if (m & (1 << i)) inNone[i] = false; else inAll[i] = false; }
+    }
+    if (validCount === 0) return 'contradiction';
+    let changed = false;
+    for (let i = 0; i < U; i++) {
+      const [r, c] = unknown[i];
+      if (inAll[i]) { state[r * N + c] = 1; changed = true; }
+      else if (inNone[i]) { state[r * N + c] = 2; changed = true; }
+    }
+    return changed ? 'changed' : 'stable';
+  }
+
+  function propagate(grid, N, state, rowTargets, colTargets) {
+    let anyChange = false, loop = true;
+    while (loop) {
+      loop = false;
+      for (let r = 0; r < N; r++) {
+        const cells = []; for (let c = 0; c < N; c++) cells.push([r, c]);
+        const res = propagateLine(grid, N, state, cells, rowTargets[r]);
+        if (res === 'contradiction') return 'contradiction';
+        if (res === 'changed') { loop = true; anyChange = true; }
+      }
+      for (let c = 0; c < N; c++) {
+        const cells = []; for (let r = 0; r < N; r++) cells.push([r, c]);
+        const res = propagateLine(grid, N, state, cells, colTargets[c]);
+        if (res === 'contradiction') return 'contradiction';
+        if (res === 'changed') { loop = true; anyChange = true; }
+      }
+    }
+    return anyChange ? 'changed' : 'stable';
+  }
+
+  // Difficulty: how many cells must be revealed (from the known solution)
+  // because propagation stalls. 0 => pure-logic solvable.
+  function analyzeGuesses(grid, N, rowTargets, colTargets, solution) {
+    const state = new Int8Array(N * N); // all unknown
+    let guesses = 0;
+    for (let iter = 0; iter < N * N + 5; iter++) {
+      const res = propagate(grid, N, state, rowTargets, colTargets);
+      if (res === 'contradiction') return { guesses: 999, solved: false };
+      // all decided?
+      let firstUnknown = -1;
+      for (let i = 0; i < N * N; i++) if (state[i] === 0) { firstUnknown = i; break; }
+      if (firstUnknown === -1) return { guesses, solved: true };
+      // stuck: reveal the solution value of the most-constrained unknown cell
+      const cell = pickReveal(grid, N, state, rowTargets, colTargets);
+      const idx = cell == null ? firstUnknown : cell;
+      const r = (idx / N) | 0, c = idx % N;
+      state[idx] = solution[r][c] ? 1 : 2;
+      guesses++;
+    }
+    return { guesses, solved: false };
+  }
+
+  // choose unknown cell that appears in a line with fewest valid completions (most constrained)
+  function pickReveal(grid, N, state, rowTargets, colTargets) {
+    let best = null, bestScore = Infinity;
+    for (let i = 0; i < N * N; i++) {
+      if (state[i] !== 0) continue;
+      const r = (i / N) | 0, c = i % N;
+      const score = lineFreedom(grid, N, state, r, c, rowTargets, colTargets);
+      if (score < bestScore) { bestScore = score; best = i; }
+    }
+    return best;
+  }
+  function lineFreedom(grid, N, state, r, c, rowTargets, colTargets) {
+    // rough: count unknown cells in this cell's row + col (fewer = more constrained)
+    let u = 0;
+    for (let cc = 0; cc < N; cc++) if (state[r * N + cc] === 0) u++;
+    for (let rr = 0; rr < N; rr++) if (state[rr * N + c] === 0) u++;
+    return u;
+  }
+
+  // ---- richer difficulty analysis (deduction depth + ambiguity) ----
+  function propagateOnce(grid, N, state, rowTargets, colTargets) {
+    let changed = false;
+    for (let r = 0; r < N; r++) {
+      const cells = []; for (let c = 0; c < N; c++) cells.push([r, c]);
+      const res = propagateLine(grid, N, state, cells, rowTargets[r]);
+      if (res === 'contradiction') return 'contradiction';
+      if (res === 'changed') changed = true;
+    }
+    for (let c = 0; c < N; c++) {
+      const cells = []; for (let r = 0; r < N; r++) cells.push([r, c]);
+      const res = propagateLine(grid, N, state, cells, colTargets[c]);
+      if (res === 'contradiction') return 'contradiction';
+      if (res === 'changed') changed = true;
+    }
+    return changed ? 'changed' : 'stable';
+  }
+
+  function lineCandidates(grid, N, cells, target) {
+    const vals = cells.map(([r, c]) => grid[r][c]);
+    const U = vals.length; let cnt = 0;
+    for (let m = 0; m < (1 << U); m++) { let s = 0; for (let i = 0; i < U; i++) if (m & (1 << i)) s += vals[i]; if (s === target) cnt++; }
+    return cnt;
+  }
+
+  // Returns deduction depth (rounds), ambiguity (extra candidate subsets across
+  // lines), trivial line count, and whether pure logic solves it.
+  function analyzeFull(grid, N, rowTargets, colTargets) {
+    let ambiguity = 0, trivial = 0;
+    for (let r = 0; r < N; r++) { const cells = []; for (let c = 0; c < N; c++) cells.push([r, c]); const cand = lineCandidates(grid, N, cells, rowTargets[r]); ambiguity += cand - 1; if (cand === 1) trivial++; }
+    for (let c = 0; c < N; c++) { const cells = []; for (let r = 0; r < N; r++) cells.push([r, c]); const cand = lineCandidates(grid, N, cells, colTargets[c]); ambiguity += cand - 1; if (cand === 1) trivial++; }
+    const state = new Int8Array(N * N); let rounds = 0;
+    for (let it = 0; it < N * N + 5; it++) {
+      const res = propagateOnce(grid, N, state, rowTargets, colTargets);
+      if (res === 'contradiction') return { solved: false, rounds, ambiguity, trivialLines: trivial, unknown: N * N };
+      if (res === 'changed') rounds++; else break;
+    }
+    let unknown = 0; for (let i = 0; i < N * N; i++) if (state[i] === 0) unknown++;
+    return { solved: unknown === 0, rounds, ambiguity, trivialLines: trivial, unknown };
+  }
+
+  // ---- generation with difficulty band ----
+  function genRaw(N, p, rnd) {
+    const grid = [];
+    for (let r = 0; r < N; r++) { grid[r] = []; for (let c = 0; c < N; c++) grid[r][c] = 1 + Math.floor(rnd() * 9); }
+    const keep = []; let bad = false;
+    for (let r = 0; r < N; r++) { keep[r] = []; for (let c = 0; c < N; c++) keep[r][c] = rnd() < p; }
+    for (let r = 0; r < N && !bad; r++) { let k = 0; for (let c = 0; c < N; c++) if (keep[r][c]) k++; if (k === 0 || k === N) bad = true; }
+    for (let c = 0; c < N && !bad; c++) { let k = 0; for (let r = 0; r < N; r++) if (keep[r][c]) k++; if (k === 0 || k === N) bad = true; }
+    if (bad) return null;
+    const rowTargets = []; const colTargets = new Array(N).fill(0);
+    for (let r = 0; r < N; r++) { let s = 0; for (let c = 0; c < N; c++) if (keep[r][c]) { s += grid[r][c]; colTargets[c] += grid[r][c]; } rowTargets.push(s); }
+    return { grid, keep, rowTargets, colTargets };
+  }
+
+  const BANDS = {
+    easy:   { N: 5, p: 0.55, minRounds: 1, minAmb: 4 },
+    medium: { N: 6, p: 0.50, minRounds: 2, minAmb: 24 },
+    hard:   { N: 7, p: 0.46, minRounds: 3, minAmb: 55 },
+  };
+
+  function generate(difficulty, seed) {
+    const cfg = BANDS[difficulty] || BANDS.easy;
+    let s = (seed == null ? (Math.random() * 1e9) | 0 : seed) >>> 0;
+    const rnd = makeRng(s);
+    for (let attempt = 0; attempt < 20000; attempt++) {
+      const raw = genRaw(cfg.N, cfg.p, rnd);
+      if (!raw) continue;
+      if (countSolutions(raw.grid, cfg.N, raw.rowTargets, raw.colTargets, 2) !== 1) continue;
+      const a = analyzeFull(raw.grid, cfg.N, raw.rowTargets, raw.colTargets);
+      if (!a.solved) continue; // must be solvable by pure logic (fair, no guessing)
+      if (a.rounds < cfg.minRounds || a.ambiguity < cfg.minAmb) continue;
+      return { N: cfg.N, difficulty, seed: s, grid: raw.grid, rowTargets: raw.rowTargets, colTargets: raw.colTargets, solution: raw.keep, rounds: a.rounds, ambiguity: a.ambiguity };
+    }
+    return null;
+  }
+
+  const api = { generate, countSolutions, analyzeGuesses, analyzeFull, genRaw, makeRng, BANDS };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  global.CrossEngine = api;
+})(typeof window !== 'undefined' ? window : globalThis);
+
+</script>
+<script>
+const tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
+if (tg){ tg.ready(); tg.expand(); }
+function haptic(t){ try{ if(tg&&tg.HapticFeedback){ if(t==='ok')tg.HapticFeedback.notificationOccurred('success'); else tg.HapticFeedback.impactOccurred('light'); } }catch(e){} }
+
+let state=null;
+
+function startGame(diff){
+  const p = CrossEngine.generate(diff, (Math.random()*1e9)|0);
+  if(!p){ document.getElementById('msg').textContent='Ошибка генерации'; return; }
+  state={ diff, N:p.N, grid:p.grid, rowTargets:p.rowTargets, colTargets:p.colTargets, solution:p.solution,
+    crossed:{}, history:[], solved:false, cells:[], okSet:new Set() };
+  const msg=document.getElementById('msg'); msg.textContent=''; msg.className='';
+  if(tg&&tg.MainButton) tg.MainButton.hide();
+  renderBoard(true); updateUndo();
+}
+
+function renderBoard(animateIn){
+  const N=state.N, board=document.getElementById('board');
+  const size=Math.max(190,Math.min(window.innerWidth-20,540,window.innerHeight-235));
+  board.style.width=size+'px';
+  board.style.gridTemplateColumns='repeat('+(N+1)+',1fr)';
+  board.innerHTML=''; state.cells=[];
+  let order=0;
+  for(let c=0;c<N;c++) board.appendChild(makeTarget('col',c));
+  const corner=document.createElement('div'); corner.className='target corner'; board.appendChild(corner);
+  for(let r=0;r<N;r++){
+    for(let c=0;c<N;c++){
+      const key=r+','+c;
+      const div=document.createElement('div');
+      div.className='cell';
+      const span=document.createElement('span'); span.className='d'; span.textContent=state.grid[r][c];
+      div.appendChild(span);
+      if(animateIn){ div.classList.add('in'); div.style.animationDelay=(order*14)+'ms'; }
+      div.addEventListener('click',(e)=>toggle(key,div,e));
+      state.cells[r*N+c]=div;
+      board.appendChild(div); order++;
+    }
+    board.appendChild(makeTarget('row',r));
+  }
+  updateTargets(false);
+}
+
+function makeTarget(kind,idx){
+  const d=document.createElement('div'); d.className='target'; d.dataset.kind=kind; d.dataset.idx=idx;
+  const goal=document.createElement('div'); goal.className='goal'; goal.textContent=(kind==='row'?state.rowTargets[idx]:state.colTargets[idx]);
+  const cur=document.createElement('div'); cur.className='cur'; cur.textContent='0';
+  d.appendChild(goal); d.appendChild(cur); return d;
+}
+
+function keptSum(kind,idx){
+  let s=0; const N=state.N;
+  if(kind==='row'){ for(let c=0;c<N;c++) if(!state.crossed[idx+','+c]) s+=state.grid[idx][c]; }
+  else { for(let r=0;r<N;r++) if(!state.crossed[r+','+idx]) s+=state.grid[r][idx]; }
+  return s;
+}
+
+function updateTargets(pulse){
+  document.querySelectorAll('.target[data-kind]').forEach(d=>{
+    const kind=d.dataset.kind, idx=Number(d.dataset.idx);
+    const cur=keptSum(kind,idx); const tgt=kind==='row'?state.rowTargets[idx]:state.colTargets[idx];
+    d.querySelector('.cur').textContent=cur;
+    const id=kind+idx; const wasOk=state.okSet.has(id);
+    d.classList.remove('ok','over');
+    if(cur===tgt){ d.classList.add('ok');
+      if(pulse && !wasOk){ d.classList.remove('justok'); void d.offsetWidth; d.classList.add('justok'); }
+      state.okSet.add(id);
+    } else { state.okSet.delete(id); if(cur>tgt) d.classList.add('over'); }
+  });
+}
+
+function updateUndo(){ const b=document.getElementById('undo'); if(b) b.disabled = !state || state.solved || !state.history.length; }
+
+function applyCell(key){ const [r,c]=key.split(',').map(Number); const el=state.cells[r*state.N+c]; if(el){ el.classList.toggle('crossed', !!state.crossed[key]); } return el; }
+
+function popCell(el){ if(!el)return; el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop'); }
+
+function ripple(el,e){
+  if(!el)return; const rect=el.getBoundingClientRect();
+  const r=document.createElement('span'); r.className='ripple';
+  const sz=Math.max(rect.width,rect.height); r.style.width=r.style.height=sz+'px';
+  const x=(e&&e.clientX!=null?e.clientX:rect.left+rect.width/2)-rect.left-sz/2;
+  const y=(e&&e.clientY!=null?e.clientY:rect.top+rect.height/2)-rect.top-sz/2;
+  r.style.left=x+'px'; r.style.top=y+'px';
+  el.appendChild(r); setTimeout(()=>r.remove(),520);
+}
+
+function toggle(key,el,e){
+  if(state.solved)return;
+  const was=!!state.crossed[key];
+  state.history.push({key:key, prev:was});
+  if(was) delete state.crossed[key]; else state.crossed[key]=true;
+  ripple(el,e); popCell(el); applyCell(key);
+  haptic('tap');
+  updateTargets(true); updateUndo();
+  checkWin();
+}
+
+function undo(){
+  if(!state||state.solved||!state.history.length)return;
+  const last=state.history.pop();
+  if(last.prev) state.crossed[last.key]=true; else delete state.crossed[last.key];
+  const el=applyCell(last.key); popCell(el);
+  haptic('tap');
+  updateTargets(false); updateUndo();
+}
+
+function checkWin(){
+  const N=state.N;
+  for(let r=0;r<N;r++) if(keptSum('row',r)!==state.rowTargets[r]) return false;
+  for(let c=0;c<N;c++) if(keptSum('col',c)!==state.colTargets[c]) return false;
+  win(); return true;
+}
+
+function confetti(){
+  const colors=['#ef5350','#42a5f5','#66bb6a','#ffca28','#ab47bc','#ff7043','#26c6da'];
+  for(let i=0;i<48;i++){
+    const c=document.createElement('div'); c.className='confetti';
+    c.style.left=(Math.random()*100)+'vw';
+    c.style.background=colors[i%colors.length];
+    c.style.animationDuration=(1.1+Math.random()*1.3)+'s';
+    c.style.animationDelay=(Math.random()*0.25)+'s';
+    c.style.transform='rotate('+(Math.random()*360)+'deg)';
+    document.body.appendChild(c); setTimeout(()=>c.remove(),2800);
+  }
+}
+
+function win(){
+  if(state.solved)return; state.solved=true;
+  const msg=document.getElementById('msg');
+  msg.textContent='🎉 Отлично! Решено';
+  msg.className='win'; haptic('ok'); updateUndo();
+  const board=document.getElementById('board'); board.classList.remove('board-win'); void board.offsetWidth; board.classList.add('board-win');
+  confetti();
+  if(tg&&tg.MainButton){ tg.MainButton.setText('Новая игра'); tg.MainButton.show(); if(tg.MainButton.offClick)tg.MainButton.offClick(); tg.MainButton.onClick(()=>{ tg.MainButton.hide(); startGame(state.diff); }); }
+}
+
+document.querySelectorAll('.diffrow button').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('.diffrow button').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active'); startGame(b.dataset.diff);
+}));
+document.getElementById('new').addEventListener('click',()=>startGame(state.diff));
+document.getElementById('undo').addEventListener('click',undo);
+window.addEventListener('resize',()=>{ if(state)renderBoard(false); });
+startGame('easy');
+</script>
+</body>
+</html>
